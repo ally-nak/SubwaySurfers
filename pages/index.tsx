@@ -8,12 +8,14 @@ import Footer from "../components/Footer";
 import Github from "../components/GitHub";
 import Header from "../components/Header";
 import LoadingDots from "../components/LoadingDots";
+import AudioPlayer from "../components/AudioPlayer";
 
 const Home: NextPage = () => {
   const [loading, setLoading] = useState(false);
   const [bio, setBio] = useState("");
-  const [vibe, setVibe] = useState<VibeType>("Professional");
-  const [generatedBios, setGeneratedBios] = useState<String>("");
+  const [vibe, setVibe] = useState<VibeType>("30 seconds");
+  const [audioFile, setAudioFile] = useState<String>("");
+  const [videoFile, setVideoFile] = useState<String>("final_video.mp4");
 
   const bioRef = useRef<null | HTMLDivElement>(null);
 
@@ -23,20 +25,42 @@ const Home: NextPage = () => {
     }
   };
 
-  const prompt = `Generate 2 ${vibe} twitter biographies with no hashtags and clearly labeled "1." and "2.". ${
-    vibe === "Funny"
-      ? "Make sure there is a joke in there and it's a little ridiculous."
-      : null
-  }
-      Make sure each generated biography is less than 160 characters, has short sentences that are found in Twitter bios, and base them on this context: ${bio}${
-    bio.slice(-1) === "." ? "" : "."
-  }`;
-
   const generateBio = async (e: any) => {
     e.preventDefault();
-    setGeneratedBios("");
+    setAudioFile("");
     setLoading(true);
-    const response = await fetch("/api/generate", {
+    var text = "";
+    const response = await fetch('http://127.0.0.1:5000/scraper-endpoint', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url: bio
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      console.log("HEREE");
+      console.log(data);
+      text = data.result;
+    })
+    .catch(error => {
+      alert("There was an error fetching data from the article url. Please make sure the url is correct and try again");
+    });
+
+    if (text == "") {
+      alert("There was an error fetching data from the article url. Please make sure the url is correct and try again");
+    }
+
+    var wordcount = "75";
+    if (vibe == "1 minute") {
+      wordcount = "150";
+    } else if (vibe == "2 minute") {
+      wordcount = "300";
+    }
+    const prompt = "The following is HTML text of an online article. Your goal is to summarize the most important parts of the article in less than " + wordcount + ". Format the text into an exciting podcast style script." + text;
+    const gpt_response = await fetch("/api/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -46,12 +70,12 @@ const Home: NextPage = () => {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(response.statusText);
+    if (!gpt_response.ok) {
+      throw new Error(gpt_response.statusText);
     }
 
     // This data is a ReadableStream
-    const data = response.body;
+    const data = gpt_response.body;
     if (!data) {
       return;
     }
@@ -60,12 +84,53 @@ const Home: NextPage = () => {
     const decoder = new TextDecoder();
     let done = false;
 
+    var summary = "";
+
     while (!done) {
       const { value, done: doneReading } = await reader.read();
       done = doneReading;
       const chunkValue = decoder.decode(value);
-      setGeneratedBios((prev) => prev + chunkValue);
+      summary += chunkValue;
     }
+
+    var audioFile = "";
+    const audio_response = await fetch("/api/audio", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary,
+      }),
+    }).then(response => response.json())
+    .then(data => {
+      console.log("HEREE");
+      console.log(data);
+      audioFile = data.audioFile.replace("public/", "");
+    })
+    .catch(error => {
+      alert("There was an error fetching the audio file");
+    });
+    console.log("AUDIO FILE", audioFile);
+    setAudioFile(audioFile);
+
+    var videoFile = "";
+    const video_response = await fetch('http://127.0.0.1:5000/video-endpoint', {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }).then(response => response.json())
+    .then(data => {
+      console.log("HEREE");
+      console.log(data);
+      videoFile = data.result.replace("public/", "");
+    })
+    .catch(error => {
+      alert("There was an error generating the video file");
+    });
+    console.log("VIDEO FILE", videoFile);
+    setVideoFile(videoFile);
     scrollToBios();
     setLoading(false);
   };
@@ -73,25 +138,16 @@ const Home: NextPage = () => {
   return (
     <div className="flex max-w-5xl mx-auto flex-col items-center justify-center py-2 min-h-screen">
       <Head>
-        <title>Twitter Bio Generator</title>
+        <title>Listen in Bite Size Chunks</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <Header />
       <main className="flex flex-1 w-full flex-col items-center justify-center text-center px-4 mt-12 sm:mt-20">
-        <a
-          className="flex max-w-fit items-center justify-center space-x-2 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-600 shadow-md transition-colors hover:bg-gray-100 mb-5"
-          href="https://github.com/Nutlope/twitterbio"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Github />
-          <p>Star on GitHub</p>
-        </a>
         <h1 className="sm:text-6xl text-4xl max-w-[708px] font-bold text-slate-900">
-          Generate your next Twitter bio using chatGPT
+          Summarize any article into a bite-size audio clip.
         </h1>
-        <p className="text-slate-500 mt-5">47,118 bios generated so far.</p>
+        <p className="text-slate-500 mt-5">Learn more, spend less.</p>
         <div className="max-w-xl w-full">
           <div className="flex mt-10 items-center space-x-3">
             <Image
@@ -102,25 +158,21 @@ const Home: NextPage = () => {
               className="mb-5 sm:mb-0"
             />
             <p className="text-left font-medium">
-              Copy your current bio{" "}
-              <span className="text-slate-500">
-                (or write a few sentences about yourself)
-              </span>
-              .
+              Enter the article URL.{" "}              
             </p>
-          </div>
+            </div>
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
-            rows={4}
+            rows={2}
             className="w-full rounded-md border-gray-300 shadow-sm focus:border-black focus:ring-black my-5"
             placeholder={
-              "e.g. Senior Developer Advocate @vercel. Tweeting about web development, AI, and React / Next.js. Writing nutlope.substack.com."
+              "e.g. https://stanfordhatesfun.com/"
             }
           />
           <div className="flex mb-5 items-center space-x-3">
             <Image src="/2-black.png" width={30} height={30} alt="1 icon" />
-            <p className="text-left font-medium">Select your vibe.</p>
+            <p className="text-left font-medium">Select how long you want the audio summary to be.</p>
           </div>
           <div className="block">
             <DropDown vibe={vibe} setVibe={(newVibe) => setVibe(newVibe)} />
@@ -131,7 +183,7 @@ const Home: NextPage = () => {
               className="bg-black rounded-xl text-white font-medium px-4 py-2 sm:mt-10 mt-8 hover:bg-black/80 w-full"
               onClick={(e) => generateBio(e)}
             >
-              Generate your bio &rarr;
+              Generate your audio summary &rarr;
             </button>
           )}
           {loading && (
@@ -150,36 +202,18 @@ const Home: NextPage = () => {
         />
         <hr className="h-px bg-gray-700 border-1 dark:bg-gray-700" />
         <div className="space-y-10 my-10">
-          {generatedBios && (
+          {videoFile && (
             <>
               <div>
                 <h2
                   className="sm:text-4xl text-3xl font-bold text-slate-900 mx-auto"
                   ref={bioRef}
                 >
-                  Your generated bios
+                  Here's your audio summary!
                 </h2>
               </div>
               <div className="space-y-8 flex flex-col items-center justify-center max-w-xl mx-auto">
-                {generatedBios
-                  .substring(generatedBios.indexOf("1") + 3)
-                  .split("2.")
-                  .map((generatedBio) => {
-                    return (
-                      <div
-                        className="bg-white rounded-xl shadow-md p-4 hover:bg-gray-100 transition cursor-copy border"
-                        onClick={() => {
-                          navigator.clipboard.writeText(generatedBio);
-                          toast("Bio copied to clipboard", {
-                            icon: "✂️",
-                          });
-                        }}
-                        key={generatedBio}
-                      >
-                        <p>{generatedBio}</p>
-                      </div>
-                    );
-                  })}
+              <AudioPlayer src={videoFile.toString()}></AudioPlayer>
               </div>
             </>
           )}
